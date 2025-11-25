@@ -1,0 +1,19 @@
+/* frontend/styles.css */
+body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; margin: 0; padding: 20px; background:#f7fafc; color:#111827; }
+.container { max-width: 960px; margin:0 auto; }
+h1 { font-size: 1.8rem; margin-bottom: 8px; }
+.input-panel, .output-panel { background: #fff; padding: 16px; margin-bottom: 16px; border-radius: 8px; box-shadow: 0 4px 10px rgba(2,6,23,0.06); }
+#task-form input { display: block; width: 100%; padding:8px; margin-bottom:8px; border-radius:6px; border:1px solid #e5e7eb; }
+#task-form button { padding:10px 14px; border-radius:6px; border:none; background:#2563eb; color:white; cursor:pointer; }
+.controls { display:flex; gap:8px; align-items:center; margin-top:8px; }
+.controls select, .controls button { padding:8px; border-radius:6px; }
+#bulk-json { width:100%; margin-top:8px; padding:8px; border-radius:6px; border:1px solid #e5e7eb; }
+.task-item { padding:10px; border-radius:6px; border:1px solid #e5e7eb; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; }
+.priority-high { border-left:6px solid #dc2626; }
+.priority-medium { border-left:6px solid #f59e0b; }
+.priority-low { border-left:6px solid #10b981; }
+.explanation { font-size: 0.9rem; color:#374151; }
+@media (min-width: 800px) {
+  .input-panel, .output-panel { display:inline-block; width:48%; vertical-align:top; }
+  .output-panel { margin-left: 4%; }
+}
