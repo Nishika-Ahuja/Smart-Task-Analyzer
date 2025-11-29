@@ -98,15 +98,8 @@ This is ideal for priority decisions where logic must be clear.
 
 ---
 
-## **3.4 Why No Database Storage for Tasks?**
-Tasks are analyzed in real-time.  
-Saving them was not part of assignment requirements.
 
-The frontend manages tasks in a JS array.
-
----
-
-## **3.5 Why Use vis-network.js for Dependency Graphs?**
+## **3.4 Why Use vis-network.js for Dependency Graphs?**
 - Simple  
 - Lightweight  
 - Supports directed edges  
@@ -114,7 +107,7 @@ The frontend manages tasks in a JS array.
 
 ---
 
-## **3.6 Why Circular Dependency Detection?**
+## **3.5 Why Circular Dependency Detection?**
 To catch invalid scenarios like:
 
 ```
@@ -127,7 +120,7 @@ We implemented **Kahn’s Algorithm** to detect cycles safely.
 
 ---
 
-## **3.7 Why Strategies?**
+## **3.6 Why Strategies?**
 Different users have different workflows:
 
 | Strategy | Meaning |
@@ -226,19 +219,19 @@ Returns **Top 3 tasks to do next**.
 
 # 7. Frontend Features
 
-✔ Add task manually  
-✔ Remove tasks  
-✔ Paste JSON and load/append  
-✔ Switch strategies  
-✔ Display priority badges:
+- Add task manually  
+- Remove tasks  
+- Paste JSON and load/append  
+- Switch strategies  
+- Display priority badges:
 
 - **High** – red  
 - **Medium** – yellow  
 - **Low** – green  
 
-✔ Tooltips show breakdown  
-✔ Graph visualization with arrows  
-✔ API integration  
+- Tooltips show breakdown  
+- Graph visualization with arrows  
+- API integration  
 
 ---
 
