@@ -1,45 +1,108 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Smart Task Analyzer</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link rel="stylesheet" href="styles.css" />
+
+  <link href="https://unpkg.com/vis-network/styles/vis-network.min.css" rel="stylesheet" type="text/css" />
+  <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+
 </head>
 <body>
   <div class="container">
-    <h1>Smart Task Analyzer</h1>
+    <header>
+      <h1>Smart Task Analyzer</h1>
+      <p class="subtitle">Add tasks, paste JSON, choose a strategy and analyze priorities</p>
 
-    <section class="input-panel">
-      <h2>Add Task</h2>
-      <form id="task-form">
-        <input type="text" id="title" placeholder="Title" required />
-        <input type="date" id="due_date" />
-        <input type="number" id="estimated_hours" placeholder="Estimated hours" step="0.5" min="0" value="1" />
-        <input type="number" id="importance" placeholder="Importance (1-10)" min="1" max="10" value="5" />
-        <input type="text" id="dependencies" placeholder="Dependencies (comma-separated IDs)" />
-        <button type="submit">Add</button>
+    </header>
+
+    <section class="input-section card">
+      <h3>Add Task</h3>
+
+      <form id="taskForm">
+        <label>Title
+          <input name="title" required autocomplete="off" />
+        </label>
+
+        <div class="row two">
+          <label>Due date
+            <input name="due_date" type="date" />
+          </label>
+          <label>Estimated hours
+            <input name="estimated_hours" type="number" step="1" min="1" value="1" />
+          </label>
+        </div>
+
+        <div class="row two">
+          <label>Importance (1-10)
+            <input name="importance" type="number" min="1" max="10" value="5" />
+          </label>
+          <label>Dependencies (comma separated ids)
+            <input name="dependencies" placeholder="e.g. 1,2" />
+          </label>
+        </div>
+
+        <div class="actions">
+          <button type="submit" class="big primary">Add Task</button>
+          <button id="clearList" type="button">Clear All</button>
+        </div>
       </form>
 
-      <h3>Or paste JSON array of tasks</h3>
-      <textarea id="bulk-json" placeholder='[{"id":"1","title":"..."}]' rows="6"></textarea>
-      <div class="controls">
-        <select id="strategy">
-          <option value="smart_balance">Smart Balance</option>
-          <option value="fastest_wins">Fastest Wins</option>
-          <option value="high_impact">High Impact</option>
-          <option value="deadline_driven">Deadline Driven</option>
-        </select>
-        <button id="analyze-btn">Analyze Tasks</button>
-        <button id="suggest-btn">Suggest Top 3</button>
+      <hr class="sep" />
+
+      <h3>Bulk JSON (paste array of tasks)</h3>
+      <p class="muted-small">Format: <code>[{ "title": "...", "due_date": "YYYY-MM-DD", "estimated_hours": 2, "importance": 7, "dependencies": [1] }, ...]</code></p>
+      <textarea id="bulkInput" placeholder='[{"title":"Fix bug","due_date":"2025-11-30","estimated_hours":2,"importance":8,"dependencies":[]}]'></textarea>
+      <div class="bulk-actions">
+        <button id="loadBulk">Load JSON</button>
+        <button id="appendBulk">Append JSON</button>
+        <div id="bulkError" class="error hidden"></div>
+      </div>
+
+      <div class="row" style="margin-top:1rem; align-items:center;">
+        <label style="margin-bottom:0;">Strategy:
+          <select id="strategySelect">
+            <option value="smart">Smart Balance</option>
+            <option value="fast">Fastest Wins</option>
+            <option value="impact">High Impact</option>
+            <option value="deadline">Deadline Driven</option>
+          </select>
+        </label>
+
+        <div class="btn-group">
+          <button id="analyzeBtn" class="big primary">Analyze Tasks</button>
+          <button id="suggestBtn" class="big">Top 3 Suggestions</button>
+        </div>
       </div>
     </section>
 
-    <section class="output-panel">
-      <h2>Results</h2>
-      <div id="results"></div>
+    <section class="tasks-section card">
+      <h3>Tasks to Analyze</h3>
+      <div id="taskList" class="task-list"></div>
     </section>
+
+    <section class="output-section card">
+      <h3>Analysis Result</h3>
+      <div id="loading" class="hidden">Analyzing…</div>
+      <div id="error" class="hidden error"></div>
+      <div id="resultList" class="task-list"></div>
+    </section>
+
+    <section class="output-section card">
+      <h3>Top 3 Suggestions</h3>
+      <div id="suggestList" class="task-list"></div>
+    </section>
+
+
+  <section class="output-section card">
+  <h3>Dependency Graph</h3>
+  <div style="display:flex; gap:1rem; flex-wrap:wrap;">
+    <pre id="graphOutput" class="graph" style="flex:1; min-width:200px;">No tasks.</pre>
+    <div id="graphVis" style="flex:2; height:400px; border:1px solid #ccc;"></div>
   </div>
+</section>
 
   <script src="script.js"></script>
 </body>

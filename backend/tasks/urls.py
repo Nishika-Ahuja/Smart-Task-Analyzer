@@ -1,7 +1,7 @@
 from django.urls import path
-from .views import AnalyzeTasksView, SuggestTasksView
+from .views import AnalyzeView, SuggestView
 
 urlpatterns = [
-    path('analyze/', AnalyzeTasksView.as_view(), name='analyze_tasks'),
-    path('suggest/', SuggestTasksView.as_view(), name='suggest_tasks'),
+    path("analyze/", AnalyzeView.as_view(), name="analyze"),
+    path("suggest/", SuggestView.as_view(), name="suggest"),
 ]

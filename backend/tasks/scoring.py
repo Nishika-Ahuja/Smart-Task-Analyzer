@@ -1,211 +1,141 @@
-# backend/tasks/scoring.py
 from datetime import date
 from collections import defaultdict, deque
 
-DEFAULT_WEIGHTS = {
-    'urgency': 0.4,
-    'importance': 0.3,
-    'effort': 0.15,
-    'dependencies': 0.15
-}
+class CircularDependencyError(Exception):
+    pass
 
-STRATEGIES = {
-    'fastest_wins': {'urgency': 0.2, 'importance': 0.2, 'effort': 0.5, 'dependencies': 0.1},
-    'high_impact': {'urgency': 0.2, 'importance': 0.6, 'effort': 0.1, 'dependencies': 0.1},
-    'deadline_driven': {'urgency': 0.6, 'importance': 0.2, 'effort': 0.1, 'dependencies': 0.1},
-    'smart_balance': DEFAULT_WEIGHTS,
-}
+def detect_cycle(tasks_by_id):
 
-def _safe_days_until_due(due_date):
-    if due_date is None:
-        return None
-    today = date.today()
-    return (due_date - today).days
-
-def normalize(value, minv, maxv):
-    if maxv == minv:
-        return 0.0
-    return (value - minv) / (maxv - minv)
-
-def detect_cycles(tasks):
-    # tasks: list of dicts with 'id' and 'dependencies' (list of ids)
+    indeg = {}
     graph = defaultdict(list)
-    ids = set()
-    for t in tasks:
-        tid = str(t.get('id', t.get('title')))
-        ids.add(tid)
-    for t in tasks:
-        tid = str(t.get('id', t.get('title')))
-        for dep in t.get('dependencies', []):
-            graph[tid].append(str(dep))
-    visited = {}
-    stack = set()
-    cycles = set()
+    for tid, t in tasks_by_id.items():
+        indeg[tid] = indeg.get(tid, 0)
+    for tid, t in tasks_by_id.items():
+        for dep in t.get("dependencies", []):
+            graph[dep].append(tid)
+            indeg[tid] = indeg.get(tid, 0) + 1
 
-    def dfs(node):
-        if node in visited:
-            return visited[node]
-        visited[node] = False
-        stack.add(node)
-        for nei in graph.get(node, []):
-            if nei not in visited:
-                if dfs(nei):
-                    cycles.add(node)
-            elif nei in stack:
-                cycles.add(node)
-                cycles.add(nei)
-        stack.remove(node)
-        visited[node] = True
-        return visited[node]
+    q = deque([n for n, d in indeg.items() if d == 0])
+    visited = 0
+    while q:
+        u = q.popleft()
+        visited += 1
+        for v in graph.get(u, []):
+            indeg[v] -= 1
+            if indeg[v] == 0:
+                q.append(v)
+    return visited != len(indeg)
 
-    for n in list(ids):
-        if n not in visited:
-            dfs(n)
-    # Return set of node ids that are part of cycles
-    return cycles
+def compute_scores(task_list, strategy="smart", weights=None):
 
-def compute_scores(tasks, strategy='smart_balance', custom_weights=None):
-    """
-    tasks: list of dicts with fields:
-      id (optional), title, due_date (date or None), estimated_hours (float), importance (1-10), dependencies (list of ids)
-    returns list of tasks with extra keys: score (float), explanation (str), meta flags
-    """
-    if custom_weights:
-        weights = custom_weights
+
+    default_weights = {
+        "urgency": 0.35,
+        "importance": 0.30,
+        "effort": 0.15,
+        "dependency": 0.20,
+    }
+    if weights:
+        w = default_weights.copy()
+        w.update(weights)
     else:
-        weights = STRATEGIES.get(strategy, DEFAULT_WEIGHTS)
+        w = default_weights
 
-    # Defensive copy & normalize fields
-    processed = []
-    for t in tasks:
-        pt = {}
-        pt['raw'] = t
-        pt['id'] = str(t.get('id', t.get('title')))
-        pt['title'] = t.get('title', '')
-        # due_date may already be date object or None
-        pt['due_date'] = t.get('due_date', None)
-        pt['estimated_hours'] = float(t.get('estimated_hours', 1.0) or 1.0)
-        pt['importance'] = int(t.get('importance', 5) or 5)
-        pt['dependencies'] = [str(x) for x in (t.get('dependencies') or [])]
-        processed.append(pt)
+    if strategy == "fast":
+        w = {"urgency": 0.1, "importance": 0.1, "effort": 0.7, "dependency": 0.1}
+    elif strategy == "impact":
+        w = {"urgency": 0.1, "importance": 0.7, "effort": 0.05, "dependency": 0.15}
+    elif strategy == "deadline":
+        w = {"urgency": 0.7, "importance": 0.15, "effort": 0.1, "dependency": 0.05}
 
-    # Build lookup to count how many depend on each task (i.e., blockers)
+    hours = [max(0.01, (t.get("estimated_hours") or 1.0)) for t in task_list]
+    max_hours = max(hours) if hours else 1.0
+
+    tasks_by_id = {}
+    for idx, t in enumerate(task_list):
+        tid = t.get("id", idx + 1)
+        tasks_by_id[tid] = {
+            "raw": t,
+            "dependencies": t.get("dependencies", []) or []
+        }
+
+    if detect_cycle(tasks_by_id):
+        raise CircularDependencyError("Circular dependency detected in tasks input.")
+
     dependents_count = defaultdict(int)
-    for t in processed:
-        for dep in t['dependencies']:
+    for tid, v in tasks_by_id.items():
+        for dep in v["dependencies"]:
             dependents_count[dep] += 1
 
-    # detect cycles
-    cycles = detect_cycles(processed)
+    results = []
+    today = date.today()
+    for tid, v in tasks_by_id.items():
+        t = v["raw"]
+        title = t.get("title", "Untitled")
+        due = t.get("due_date")
+        if isinstance(due, str):
+            try:
+                y, m, d = map(int, due.split("-"))
+                due = date(y, m, d)
+            except Exception:
+                due = None
 
-    # For urgency normalization, compute days_until_due for tasks with date
-    days_list = []
-    for t in processed:
-        d = _safe_days_until_due(t['due_date'])
-        t['days_until_due'] = d
-        if d is not None:
-            days_list.append(d)
-    # For normalization, we want urgency high when days small or past-due
-    # Transform into "urgency raw" where larger -> more urgent:
-    # If past due (days < 0) make it large positive urgency by adding a large constant
-    urgency_raw = []
-    for t in processed:
-        d = t['days_until_due']
-        if d is None:
-            # treat as low urgency but not zero
-            u = 0.0
-        else:
-            if d < 0:
-                # past due: urgency = large value scaled by how overdue
-                u = 1000.0 + abs(d)  # ensures past-due outranks upcoming
+        days_to_due = (due - today).days if due else None
+
+        # URGENCY SCORE 
+        if strategy == "deadline":
+            if due:
+                # overdue tasks highest priority
+                if days_to_due < 0:
+                    urgency_score = 1.0
+                else:
+                    urgency_score = max(0.0, 1.0 - (days_to_due / 365.0))
             else:
-                # nearer due => higher urgency. Use inverse days (bounded).
-                # Cap at 365 days to avoid tiny numbers
-                capped = min(d, 365)
-                u = (365 - capped)  # bigger means more urgent
-        urgency_raw.append(u)
-        t['urgency_raw'] = u
-
-    # Normalize urgency_raw to 0..1
-    if urgency_raw:
-        minu = min(urgency_raw)
-        maxu = max(urgency_raw)
-    else:
-        minu = 0
-        maxu = 1
-    for t in processed:
-        t['urgency_score'] = normalize(t['urgency_raw'], minu, maxu)
-
-    # Importance normalized 1..10 -> 0..1
-    for t in processed:
-        t['importance_score'] = (t['importance'] - 1) / 9.0 if t['importance'] is not None else 0.5
-
-    # Effort: lower estimated_hours => higher score. Use 1/(1+h) then normalize
-    effort_raw = []
-    for t in processed:
-        h = max(0.0, t['estimated_hours'])
-        t['effort_raw'] = 1.0 / (1.0 + h)  # when h=0 => 1.0, as h grows -> small
-        effort_raw.append(t['effort_raw'])
-    mine = min(effort_raw) if effort_raw else 0.0
-    maxe = max(effort_raw) if effort_raw else 1.0
-    for t in processed:
-        t['effort_score'] = normalize(t['effort_raw'], mine, maxe)
-
-    # Dependencies score: how many tasks depend on this task (blocker), normalize
-    dep_counts = []
-    for t in processed:
-        c = dependents_count.get(t['id'], 0)
-        t['dependents_count'] = c
-        dep_counts.append(c)
-    mind = min(dep_counts) if dep_counts else 0
-    maxd = max(dep_counts) if dep_counts else 1
-    for t in processed:
-        t['dependency_score'] = normalize(t['dependents_count'], mind, maxd)
-
-    # Compose final score using weights
-    for t in processed:
-        w = weights
-        score = (
-            w.get('urgency', 0) * t['urgency_score'] +
-            w.get('importance', 0) * t['importance_score'] +
-            w.get('effort', 0) * t['effort_score'] +
-            w.get('dependencies', 0) * t['dependency_score']
-        )
-        # If task is in cycle, boost and flag explanation
-        meta = {}
-        explanation_parts = []
-        if t['id'] in cycles:
-            # Boost score to top; but keep it bounded by adding a strong boost
-            score += 0.25  # add a chunk to push cycles up
-            meta['circular_dependency'] = True
-            explanation_parts.append('Part of a circular dependency (needs resolution).')
+                urgency_score = 0.0
         else:
-            meta['circular_dependency'] = False
+            if days_to_due is None:
+                urgency_score = 0.2
+            else:
+                if days_to_due < 0:
+                    urgency_score = min(1.0, 0.9 + (abs(days_to_due)/30.0))
+                else:
+                    urgency_score = max(0.0, (30 - min(days_to_due,30))/30.0)
 
-        # If past-due add explicit note
-        if t['days_until_due'] is not None and t['days_until_due'] < 0:
-            explanation_parts.append(f"Past due by {abs(t['days_until_due'])} day(s).")
+        importance_raw = float(t.get("importance") or 5.0)
+        importance_score = max(0.0, min(1.0, (importance_raw - 1)/9.0))
 
-        # If no due date
-        if t['days_until_due'] is None:
-            explanation_parts.append("No due date specified (treated as lower urgency).")
+        est = float(t.get("estimated_hours") or 1.0)
+        effort_score = 1.0 - min(1.0, est / (max_hours or 1.0))
 
-        # Quick-win note
-        if t['estimated_hours'] <= 1.0:
-            explanation_parts.append("Quick win — low estimated effort.")
+        dep_score = min(1.0, dependents_count.get(tid,0)/max(1,len(task_list)))
 
-        # Important note
-        if t['importance'] >= 8:
-            explanation_parts.append("High importance.")
+        score = (
+            w.get("urgency",0)*urgency_score +
+            w.get("importance",0)*importance_score +
+            w.get("effort",0)*effort_score +
+            w.get("dependency",0)*dep_score
+        )
+        score = max(0.0, min(1.0, score))
 
-        # Dependency note if it blocks others
-        if t['dependents_count'] > 0:
-            explanation_parts.append(f"Blocks {t['dependents_count']} task(s).")
+        explanation = (
+            f"urgency: {urgency_score:.2f}, importance: {importance_score:.2f}, "
+            f"effort: {effort_score:.2f}, dependency: {dep_score:.2f} => score {score:.2f}"
+        )
 
-        t['score'] = round(score, 6)
-        t['explanation'] = " | ".join(explanation_parts) if explanation_parts else "Balanced by scores."
-        t['meta'] = meta
+        
+        results.append({
+            "id": tid,
+            "title": title,
+            "due_date": due.isoformat() if due else None,
+            "estimated_hours": est,
+            "importance": int(importance_raw),
+            "dependencies": v["dependencies"],
+            "score": round(score,4),
+            "explanation": explanation,
+        })
 
-    # Sort descending by score and return
-    processed_sorted = sorted(processed, key=lambda x: x['score'], reverse=True)
-    return processed_sorted, list(cycles)
+    results.sort(key=lambda x: x["score"], reverse=True)
+    return results
+
+
+

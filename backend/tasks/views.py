@@ -1,136 +1,163 @@
-# backend/tasks/views.py
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import TaskInputSerializer
-from .scoring import compute_scores, STRATEGIES
-from datetime import date
-from rest_framework.decorators import api_view
-import json
+from .serializers import InputTaskSerializer
+from .scoring import compute_scores, CircularDependencyError
 
-class AnalyzeTasksView(APIView):
-    """
-    POST /api/tasks/analyze/
-    Accepts JSON array of tasks and optional strategy or custom weights.
-    Returns tasks sorted by computed score and cycles (if any).
-    """
+
+class AnalyzeView(APIView):
     def post(self, request):
         payload = request.data
-        # Accept either {"tasks": [...] , "strategy": "..."} or bare list
-        if isinstance(payload, dict) and 'tasks' in payload:
-            tasks_in = payload['tasks']
-            strategy = payload.get('strategy', 'smart_balance')
-            custom_weights = payload.get('weights')
-        elif isinstance(payload, list):
-            tasks_in = payload
-            strategy = request.query_params.get('strategy', 'smart_balance')
-            custom_weights = None
-        else:
-            return Response({'error': 'Request must be a list of tasks or object with "tasks" key.'}, status=status.HTTP_400_BAD_REQUEST)
-
+        
+        tasks = payload.get("tasks")
+        if not tasks:
+        
+            tasks = payload if isinstance(payload, list) else [payload]
+      
+        strategy = (
+            payload.get("strategy") or 
+            request.query_params.get("strategy") or 
+            "smart"
+        )
+        
+      
+        valid_strategies = ["smart", "fast", "impact", "deadline"]
+        if strategy not in valid_strategies:
+            strategy = "smart"
+        
+        print(f"[AnalyzeView] Received strategy: {strategy}")  
+        print(f"[AnalyzeView] Number of tasks: {len(tasks)}")  
+        
+    
+        weights = payload.get("weights", None)
+        
+       
         validated = []
         errors = []
-        for i, t in enumerate(tasks_in):
-            ser = TaskInputSerializer(data=t)
-            if not ser.is_valid():
-                errors.append({'index': i, 'errors': ser.errors})
+        for idx, t in enumerate(tasks):
+            s = InputTaskSerializer(data=t)
+            if not s.is_valid():
+                errors.append({"index": idx, "errors": s.errors})
             else:
-                validated.append(ser.validated_data)
+                validated.append(s.validated_data)
+        
         if errors:
-            return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Convert due_date back to date objects (serializers validated)
-        processed, cycles = compute_scores(validated, strategy=strategy, custom_weights=custom_weights)
-        # Build response
-        out = []
-        for p in processed:
-            out.append({
-                'id': p['id'],
-                'title': p['title'],
-                'due_date': p['due_date'].isoformat() if p['due_date'] else None,
-                'estimated_hours': p['estimated_hours'],
-                'importance': p['importance'],
-                'dependencies': p['dependencies'],
-                'score': p['score'],
-                'explanation': p['explanation'],
-                'meta': p['meta']
-            })
-        return Response({'tasks': out, 'cycles': cycles})
-
-class SuggestTasksView(APIView):
-    """
-    GET /api/tasks/suggest/?strategy=...
-    Expects tasks to be provided in request body (POST-style), because we need task data.
-    Because the assignment requests GET, we accept tasks via JSON in body of GET
-    (some clients don't send body with GET — alternative: accept POST for suggest).
-    For robustness, support both body and query param 'tasks' (JSON-encoded).
-    """
-    def get(self, request):
-        # Extract tasks from body or query param
+            return Response(
+                {"detail": "Validation errors", "errors": errors}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         try:
-            if request.body:
-                payload = json.loads(request.body.decode('utf-8'))
-            else:
-                payload = {}
-        except Exception:
-            payload = {}
+            results = compute_scores(validated, strategy=strategy, weights=weights)
+        except CircularDependencyError as e:
+            return Response(
+                {"detail": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        print(f"[AnalyzeView] Returning {len(results)} scored tasks")  
+        
+        return Response(
+            {
+                "strategy": strategy,
+                "tasks": results
+            }, 
+            status=status.HTTP_200_OK
+        )
 
-        tasks_in = None
-        if isinstance(payload, dict) and 'tasks' in payload:
-            tasks_in = payload['tasks']
-        else:
-            qp = request.query_params.get('tasks')
-            if qp:
+
+class SuggestView(APIView):
+    def post(self, request):
+        return self._process_request(request)
+    
+    def get(self, request):
+        return self._process_request(request)
+    
+    def _process_request(self, request):
+    
+        tasks = request.data.get("tasks") if request.data else None
+        
+        if not tasks:
+            tasks_param = request.query_params.get("tasks")
+            if tasks_param:
                 try:
-                    tasks_in = json.loads(qp)
+                    import json
+                    tasks = json.loads(tasks_param)
                 except Exception:
-                    return Response({'error': 'Invalid JSON in query param tasks'}, status=status.HTTP_400_BAD_REQUEST)
-
-        if tasks_in is None:
-            return Response({'error': 'GET /api/tasks/suggest/ requires tasks list in request body or tasks query param'}, status=status.HTTP_400_BAD_REQUEST)
-
-        strategy = request.query_params.get('strategy', 'smart_balance')
-
-        # Validate
+                    return Response(
+                        {"detail": "Could not parse tasks query parameter"}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+        
+        if not tasks:
+            return Response(
+                {"detail": "No tasks provided. Send tasks in the request body."}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        strategy = (
+            request.data.get("strategy") if request.data else None or
+            request.query_params.get("strategy") or 
+            "smart"
+        )
+  
+        valid_strategies = ["smart", "fast", "impact", "deadline"]
+        if strategy not in valid_strategies:
+            strategy = "smart"
+        
+        print(f"[SuggestView] Received strategy: {strategy}")  
+        
         validated = []
         errors = []
-        for i, t in enumerate(tasks_in):
-            ser = TaskInputSerializer(data=t)
-            if not ser.is_valid():
-                errors.append({'index': i, 'errors': ser.errors})
+        for idx, t in enumerate(tasks):
+            s = InputTaskSerializer(data=t)
+            if not s.is_valid():
+                errors.append({"index": idx, "errors": s.errors})
             else:
-                validated.append(ser.validated_data)
+                validated.append(s.validated_data)
+        
         if errors:
-            return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
-
-        processed, cycles = compute_scores(validated, strategy=strategy)
-        # Pick top 3 with explanations
-        top3 = processed[:3]
+            return Response(
+                {"detail": "Validation errors", "errors": errors}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+    
+        try:
+            scored = compute_scores(validated, strategy=strategy)
+        except CircularDependencyError as e:
+            return Response(
+                {"detail": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        top3 = scored[:3] 
+        
         suggestions = []
-        for p in top3:
+        for t in top3:
+            parts = t.get("explanation", "").split(",")
+            values = {}
+            for part in parts:
+                if ":" in part:
+                    k, v = part.strip().split(":")
+                    try:
+                        values[k.strip()] = float(v)
+                    except:
+                        pass
+            
+            dominant = max(values.items(), key=lambda x: x[1])[0] if values else "score"
+            
             suggestions.append({
-                'id': p['id'],
-                'title': p['title'],
-                'score': p['score'],
-                'explanation': p['explanation'],
-                'why': _build_suggestion_explanation(p)
+                "id": t["id"],
+                "title": t["title"],
+                "score": t["score"],
+                "reason": t.get("reason", f"High {dominant} -> {values.get(dominant, 0):.2f}")
             })
-        return Response({'suggestions': suggestions, 'cycles': cycles})
-
-def _build_suggestion_explanation(p):
-    # Friendly sentences for UI
-    parts = []
-    if p['meta'].get('circular_dependency'):
-        parts.append('This task is part of a circular dependency — resolving it will unblock others.')
-    if p['days_until_due'] is not None:
-        if p['days_until_due'] < 0:
-            parts.append(f"It is past due by {abs(p['days_until_due'])} day(s).")
-        elif p['days_until_due'] <= 2:
-            parts.append(f"Due in {p['days_until_due']} day(s) — urgent.")
-    if p['dependents_count'] > 0:
-        parts.append(f"Blocks {p['dependents_count']} other task(s).")
-    if p['estimated_hours'] <= 1.0:
-        parts.append("Quick win (low estimated hours).")
-    if not parts:
-        parts.append("Selected based on combined urgency, importance and effort.")
-    return " ".join(parts)
+        
+        return Response(
+            {
+                "strategy": strategy, 
+                "suggestions": suggestions
+            }, 
+            status=status.HTTP_200_OK
+        )
