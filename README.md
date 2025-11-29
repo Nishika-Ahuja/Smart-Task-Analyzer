@@ -88,7 +88,7 @@ POST /api/tasks/suggest/
 
 ---
 
-# 4. Algorithm Explanation (300–500 Words)
+# 4. Algorithm Explanation 
 
 The Smart Task Analyzer is built around a weighted scoring system that evaluates each task based on four core factors: **urgency**, **importance**, **effort**, and **dependency impact**. Each factor contributes to the final score using a customizable weight system, creating a flexible and context-aware prioritization framework.
 
