@@ -22,28 +22,56 @@ Managing multiple tasks manually becomes difficult when:
 - Importance levels vary  
 - Workload is unpredictable  
 
-This system provides **data-driven task prioritization**.
+The Smart Task Analyzer solves this problem by offering **data-driven task prioritization**.  
+It uses a clear scoring algorithm, a dependency graph, and customizable strategies to help users decide what to do next.
 
 ### Features
 - Add tasks manually  
 - Load tasks via JSON  
 - Auto-detect circular dependencies  
 - Visual dependency graph  
-- Customizable strategies  
+- Customizable strategies (smart / fast / impact / deadline)  
 - Top 3 prioritized task suggestions  
 - Priority badges (High/Medium/Low)  
-- Tooltip breakdowns explaining score  
+- Tooltip breakdowns explaining every score  
 
 ---
 
-# 2. System Architecture
+# 2. Setup Instructions
+
+## Backend Setup (Django)
+```
+cd backend
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py runserver
+```
+
+The API runs at:
+```
+http://localhost:8000
+```
+
+##  Frontend Setup
+No installation needed.
+
+Simply open:
+```
+frontend/index.html
+```
+
+Your browser frontend communicates with Django APIs automatically.
+
+---
+
+# 3. System Architecture
 
 ### **Backend – Django REST Framework**
 - Validates tasks  
-- Computes priority score  
+- Computes priority scores  
 - Detects circular dependencies  
-- Implements strategies  
-- Generates detailed explanations  
+- Applies strategy-specific adjustments  
+- Generates human-readable explanations  
 - Exposes two endpoints:
 
 ```
@@ -51,144 +79,94 @@ POST /api/tasks/analyze/
 POST /api/tasks/suggest/
 ```
 
----
-
-### Frontend – HTML + JS
-- Interactive task form  
-- JSON bulk input  
-- Displays analyzed tasks  
-- Renders dependency graph  
-- Shows suggestions  
-- Calls Django APIs  
-- Uses **vis-network.js** for graph visualization  
+### **Frontend – HTML + JavaScript**
+- Interactive UI for adding tasks  
+- JSON bulk paste loader  
+- Suggestion & analysis panels  
+- Dependency graph built using **vis-network.js**  
+- Auto-highlighting of High/Medium/Low priority  
 
 ---
 
-# 3. Design Decisions (Documentation Required)
+# 4. Algorithm Explanation (300–500 Words)
 
-This explains *why* each component was built the way it is.
+The Smart Task Analyzer is built around a weighted scoring system that evaluates each task based on four core factors: **urgency**, **importance**, **effort**, and **dependency impact**. Each factor contributes to the final score using a customizable weight system, creating a flexible and context-aware prioritization framework.
 
-## **3.1 Why Django REST Framework?**
-- Clean JSON APIs  
-- Built-in validation  
-- Easy error handling  
-- Perfect for quick backend development  
-- Works seamlessly with frontend JS  
+**1. Urgency Score:**  
+Urgency is calculated using the number of days left until the deadline. Tasks that are overdue receive the maximum urgency score. Tasks that are due soon are scaled proportionally based on how many days remain, while tasks with no deadlines receive a low urgency by default. This ensures that time-sensitive items rise to the top of the list.
 
-DRF provides speed + reliability for this assignment.
-
----
-
-## **3.2 Why Use a Custom Algorithm Instead of ML?**
-- Fully explainable  
-- Deterministic  
-- Works offline  
-- Fast for small datasets  
-- Transparent scoring breakdown  
-
-This is ideal for priority decisions where logic must be clear.
-
----
-
-## **3.3 Why SQLite?**
-- Zero setup  
-- Fast performance  
-- Ideal for a local project  
-- Django's default ORM works instantly  
-
----
-
-
-## **3.4 Why Use vis-network.js for Dependency Graphs?**
-- Simple  
-- Lightweight  
-- Supports directed edges  
-- Great for representing task dependencies visually  
-
----
-
-## **3.5 Why Circular Dependency Detection?**
-To catch invalid scenarios like:
-
-```
-A → depends on B  
-B → depends on A
-```
-
-Circular loops break prioritization.  
-We implemented **Kahn’s Algorithm** to detect cycles safely.
-
----
-
-## **3.6 Why Strategies?**
-Different users have different workflows:
-
-| Strategy | Meaning |
-|----------|---------|
-| smart | balanced for real life |
-| fast | quick wins first |
-| impact | high-importance first |
-| deadline | time-sensitive |
-
----
-
-# 4. Scoring Algorithm
-
-Each task gets a score between **0.00 – 1.00** based on:
-
-###  Urgency  
-```
-Overdue → highest urgency  
-Due soon  → medium  
-No due date → low urgency  
-```
-
-### Importance  
-Normalized:
+**2. Importance Score:**  
+Importance is normalized using the formula:  
 ```
 (importance - 1) / 9
-```
+```  
+This creates a smooth distribution between 0 and 1 regardless of whether the user enters small or large values. Highly important tasks contribute significantly to the final score, which helps favor impactful work.
 
-### Effort  
-Favors smaller tasks:
+**3. Effort Score:**  
+Effort is modeled inversely:  
 ```
 1 - (hours / max_hours)
-```
+```  
+Smaller tasks get a higher score because they are easier to complete quickly. This is beneficial when a user chooses the “fast” strategy, which prioritizes low-effort, high-return tasks.
 
-###  Dependency Weight  
+**4. Dependency Score:**  
+A dependency graph is constructed where edges represent prerequisite relations. Tasks that unblock more tasks receive a higher dependency score:  
 ```
 dependents / total_tasks
+```  
+This incentivizes completing “bottleneck tasks” early to improve workflow efficiency.
+
+**Final Weighted Score:**  
+The final priority score uses a weighted sum:  
+```
+score = urgency*w1 + importance*w2 + effort*w3 + dependency*w4
 ```
 
-### Final Score = Weighted Sum
-```
-score = (urgency*w1 + importance*w2 + effort*w3 + dependency*w4)
-```
+The system supports multiple strategies:  
+- **Smart:** Balanced scoring.  
+- **Fast:** Emphasizes low-effort tasks.  
+- **Impact:** Emphasizes importance.  
+- **Deadline:** Enforces stronger urgency scaling.
 
-Weights are customizable.
+The algorithm also performs **circular dependency detection** using **Kahn's Topological Sorting Algorithm**. If tasks form a loop, the system rejects the input with an error.  
+This prevents infinite loops and ensures a valid dependency graph.
+
+Overall, the algorithm is deterministic, explainable, and tunable, making it ideal for real-world task management.
 
 ---
 
-# 5. Circular Dependency Detection
+# 5. Design Decisions
 
-Uses **Topological Sorting (Kahn’s Algorithm)**:
+###  Why Django REST Framework?
+- Built-in validators  
+- Quick API creation  
+- Clean JSON handling  
+- Easy error management  
 
-- Build directed graph  
-- Compute indegree  
-- Remove nodes with zero indegree  
-- If unprocessed nodes remain → CYCLE  
+### Why Not Use a Database?
+Assignment goal: **real-time analysis**  
+Tasks are stored in frontend memory only.
 
-If cycle found:
-```
-"Circular dependency detected"
-```
+### Why vis-network.js?
+- Lightweight graph library  
+- Ideal for dependency visualization  
+- Supports directional edges  
+
+### Why Weighted Algorithm Instead of ML?
+- Transparent results  
+- No training required  
+- Deterministic scoring  
+- More reliable for small datasets  
+
+### Why Top-3 Suggestions?
+Matches user productivity patterns and prevents overload.
 
 ---
 
 # 6. API Endpoints
 
 ## **POST /api/tasks/analyze/**
-### Request:
+Request:
 ```json
 {
   "tasks": [
@@ -205,7 +183,7 @@ If cycle found:
 }
 ```
 
-### Response:
+Response:
 - Sorted tasks  
 - Score breakdown  
 - Explanation  
@@ -213,29 +191,65 @@ If cycle found:
 ---
 
 ## **POST /api/tasks/suggest/**
-Returns **Top 3 tasks to do next**.
+Returns the **Top 3 tasks to do next**, with explanation.
 
 ---
 
 # 7. Frontend Features
 
-- Add task manually  
+- Add tasks manually  
 - Remove tasks  
 - Paste JSON and load/append  
-- Switch strategies  
-- Display priority badges:
-
-- **High** – red  
-- **Medium** – yellow  
-- **Low** – green  
-
-- Tooltips show breakdown  
+- Display priority badges (High/Medium/Low)  
+- Strategy selector  
+- Tooltip breakdowns  
 - Graph visualization with arrows  
-- API integration  
+- Integration with backend APIs  
 
 ---
 
-# 8. How to Run the Project
+# 8. Time Breakdown
+
+| Module | Time Spent |
+|--------|------------|
+| Backend Logic | ~40 min |
+| Scoring Algorithm | ~45 min |
+| API Development | ~30 min |
+| Frontend UI | ~60 min |
+| Graph Visualization | ~20 min |
+| Testing | ~30 min |
+| Documentation | ~20 min |
+| **Total** | **~3.5 hours** |
+
+---
+
+# 9. Bonus Challenges Attempted
+
+### Dependency Graph Visualization  
+Implemented using **vis-network.js** with directional edges and live updates.
+
+### Circular Dependency Detection  
+Implemented fully using Kahn’s Algorithm.
+
+### Score Explanations  
+Each task includes a detailed breakdown tooltip.
+
+---
+
+# 10. Future Improvements
+
+- Persist tasks using Django models  
+- User authentication  
+- Export results to PDF  
+- Dark mode UI  
+- Drag-and-drop Gantt chart  
+- AI-generated suggestions  
+- Shared team workspace  
+- Voice-based task entry  
+
+---
+
+# 11. How to Run the Project
 
 ### Backend:
 ```
@@ -243,13 +257,9 @@ cd backend
 python manage.py migrate
 python manage.py runserver
 ```
-Runs at:
-```
-http://localhost:8000
-```
 
 ### Frontend:
-Just open:
+Open:
 ```
 frontend/index.html
 ```
