@@ -53,7 +53,7 @@ POST /api/tasks/suggest/
 
 ---
 
-### Frontend – HTML + JS**
+### Frontend – HTML + JS
 - Interactive task form  
 - JSON bulk input  
 - Displays analyzed tasks  
